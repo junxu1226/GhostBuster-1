@@ -403,6 +403,7 @@ class JointParticleFilter:
 
     def __init__(self, numParticles=600):
         self.setNumParticles(numParticles)
+        self.particleList = []
 
     def setNumParticles(self, numParticles):
         self.numParticles = numParticles
@@ -437,6 +438,31 @@ class JointParticleFilter:
 
         """
         "*** YOUR CODE HERE ***"
+        combinations = list(itertools.product(self.legalPositions, repeat = self.numGhosts))
+        random.shuffle(combinations)
+        numStates = len(combinations)
+        newList = []
+        if (numStates > self.numParticles):
+            for i in range(self.numParticles):
+                newList.append(combinations[i])
+            self.particleList = newList
+            return
+        else:
+            particlePerPos = self.numParticles/numStates
+            newList = []
+            particleUsed = 0
+            for p in combinations:
+                for i in range(particlePerPos):
+                    newList.append(p)
+                    particleUsed += 1
+
+            for p in combinations:
+                if particleUsed < self.numParticles:
+                    newList.append(p)
+                    particleUsed += 1
+
+            self.particleList = newList
+
 
     def addGhostAgent(self, agent):
         "Each ghost agent is registered separately and stored (in case they are different)."
@@ -483,6 +509,38 @@ class JointParticleFilter:
         emissionModels = [busters.getObservationDistribution(dist) for dist in noisyDistances]
 
         "*** YOUR CODE HERE ***"
+        #check for capture
+        for i in range(self.numGhosts):
+            if (noisyDistances[i] == None):
+                # Ghost is captured
+                newList = []
+                for par in self.particleList:
+                    newList.append(self.getParticleWithGhostInJail(par, i))
+                self.particleList = newList
+
+        #weight the particles
+        weightedCounter = util.Counter()
+        for par in self.particleList:
+            prob = 1
+            for i in range(self.numGhosts):
+                if (noisyDistances[i] == None):continue
+                #iterative through ghost
+                trueDistance = util.manhattanDistance(par[i], pacmanPosition)
+                prob = prob * emissionModels[i][trueDistance]
+            weightedCounter[par] += prob
+
+        if (weightedCounter.totalCount() == 0):
+            self.initializeParticles()
+            return
+
+        #resample
+        newList = []
+        for i in range(self.numParticles):
+            newList.append(util.sample(weightedCounter))
+        self.particleList = newList
+        return
+
+
 
     def getParticleWithGhostInJail(self, particle, ghostIndex):
         particle = list(particle)
@@ -530,20 +588,28 @@ class JointParticleFilter:
               but in this project all ghost agents are always the same.
         """
         newParticles = []
-        for oldParticle in self.particles:
+        for oldParticle in self.particleList:
             newParticle = list(oldParticle) # A list of ghost positions
 
             # now loop through and update each entry in newParticle...
 
             "*** YOUR CODE HERE ***"
-
+            for i in range(self.numGhosts):
+                newPosDist = getPositionDistributionForGhost(setGhostPositions(gameState, newParticle),
+                                                       i, self.ghostAgents[i])
+                newParticle[i] = util.sample(newPosDist)
             "*** END YOUR CODE HERE ***"
             newParticles.append(tuple(newParticle))
-        self.particles = newParticles
+        self.particleList = newParticles
 
     def getBeliefDistribution(self):
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+        belief = util.Counter()
+        for par in self.particleList:
+            belief[par] += 1
+        belief.normalize()
+        self.beliefs = belief
+        return belief   
 
 # One JointInference module is shared globally across instances of MarginalInference
 jointInference = JointParticleFilter()
